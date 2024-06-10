@@ -6,24 +6,25 @@ abstract type GraphNode end
 abstract type Operator <: GraphNode end
 
 mutable struct Constant <: GraphNode
-    output :: Any
+    output::Any
 end
 
 mutable struct Variable <: GraphNode
-    output :: Any
-    gradient :: Any
+    output::Any
+    gradient::Any
     name::String
     batch_gradient::Any
-    Variable(output; name = "?") = new(output, nothing, name, nothing)
+    recurrent_procedure::Bool
+    Variable(output; name="?") = new(output, nothing, name, nothing, true)
 end
 
 mutable struct BroadcastedOperator{F} <: Operator
-    inputs :: Any
-    output :: Any
-    gradient :: Any
+    inputs::Any
+    output::Any
+    gradient::Any
     cache::Any
     function BroadcastedOperator(fun, inputs...)
-       return new{typeof(fun)}(inputs, nothing, nothing, nothing) 
+        return new{typeof(fun)}(inputs, nothing, nothing, nothing)
     end
 end
 
@@ -58,30 +59,41 @@ import Base: show, summary
 show(io::IO, x::BroadcastedOperator{F}) where {F} = print(io, "op.", "BR_OP", "(", F, ")");
 show(io::IO, x::Constant) = print(io, "const ", x.output)
 show(io::IO, x::Variable) = begin
-    print(io, "var ", x.name);
-    print(io, "\n ┣━ ^ "); summary(io, x.output)
-    print(io, "\n ┗━ ∇ ");  summary(io, x.gradient)
+    print(io, "var ", x.name)
+    print(io, "\n ┣━ ^ ")
+    summary(io, x.output)
+    print(io, "\n ┗━ ∇ ")
+    summary(io, x.gradient)
 end
 
 
 include("Operators.jl")
 
 function build_graph(full_input, start_hidden, known_output, i_weights, h_weights, out_weights)
-    layer_input = full_input; #[:,1]
-    layer_input = Constant(layer_input)
+
     known_output = Constant(known_output)
-    i_weights = Variable(i_weights)
-    h_weights = Variable(h_weights)
+    i_weights = Variable(i_weights, name="ZMIENNE_WEJSCIE")
+    h_weights = Variable(h_weights, name="ZMIENNE_UKRYTE")
     h = Constant(start_hidden)
-    
-    res = recurrence(i_weights, h_weights, layer_input, h) # |> tanh # to tanh raczej nie tu 
+    recurrence_started = false
+    @show size(full_input)
+    for lay in full_input
+        @show size(lay)
+        layer_input = lay #[:,1]
+        layer_input = Constant(layer_input)
+        if recurrence_started
+            res = recurrence(res, i_weights, h_weights, layer_input) |> tanh
+        else
+            res = initial_recurrence(i_weights, h_weights, layer_input, h) |> tanh # to tanh raczej nie tu 
+            recurrence_started = true
+        end
+    end
 
+    out_weights = Variable(out_weights, name="ZMIENNE_OUT") #tutaj też optymalizacja potrzebna
+    res = dense(res, out_weights) |> identity_transpose
+    e = cross_entropy_loss(res, known_output)
 
-    out_weights = Variable(out_weights) #tutaj też optymalizacja potrzebna
-    #res = dense(res, out_weights) |> identity TODO ODKOMENTUJ
-    e = mse(res, known_output)
-
-	return topological_sort(e)
+    return topological_sort(e)
 end
 
 function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
@@ -90,7 +102,7 @@ function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
             # if length(node.batch_gradient) == 1
             #     node.batch_gradient /= batch_size
             # else
-                
+
             # end
             node.batch_gradient ./= batch_size
 
@@ -99,14 +111,16 @@ function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
             # else
             #     node.output .-= lr * node.batch_gradient 
             # end
-
-            node.output .-= lr * node.batch_gradient 
+            @show size(node.output)
+            @show size(node.batch_gradient)
+            @show node.name
+            node.output .-= lr * node.batch_gradient
             fill(node.batch_gradient, 0)
         end
     end
 end
 
-@show 5.0
+# @show 5.0
 
 function forward!(order::Vector)
     for node in order
@@ -117,41 +131,80 @@ function forward!(order::Vector)
 end
 
 reset!(node::Constant) = nothing
-reset!(node::Variable) = node.gradient = nothing
+reset!(node::Variable) = let
+    node.gradient = nothing
+    node.recurrent_procedure = true
+end
 reset!(node::Operator) = node.gradient = nothing
 
 compute!(node::Constant) = nothing
 compute!(node::Variable) = nothing
 compute!(node::Operator) = node.output = forward(node, [input.output for input in node.inputs]...)
 
-update!(node::Constant, gradient) = let
-    println("UPDATE! = NOTHING??????")
-    nothing
-end
-update!(node::GraphNode, gradient) = let
-    # @show gradient
-    # for i in eachindex(gradient)
-    #     if gradient[i] < -5.
-    #         gradient[i] = -5.
-    #     elseif gradient[i] > 5.
-    #         gradient[i] = 5.
-    #     end
-    # end
-    # @show gradient
-    node.gradient = gradient
-    #@show node.gradient
-    #@show typeof(node.gradient)
-    if typeof(node) == Variable
-        if isnothing(node.batch_gradient)
-            node.batch_gradient = gradient
-        else
-            #@show node.batch_gradient
-            #@show typeof(node.batch_gradient)
-            #@show length(node.batch_gradient)
-            node.batch_gradient .+= gradient
+update!(node::Constant, gradient, final_input_gradient::Bool) =
+    let
+        println("UPDATE! = NOTHING??????")
+        nothing
+    end
+update!(node::GraphNode, gradient, final_input_gradient::Bool) =
+    let
+        # @show gradient
+        # for i in eachindex(gradient)
+        #     if gradient[i] < -5.
+        #         gradient[i] = -5.
+        #     elseif gradient[i] > 5.
+        #         gradient[i] = 5.
+        #     end
+        # end
+        
+        # println("ROZMIAR GRADIENTU: ", size(gradient))
+        println("TYP GRADIENTU: ", typeof(gradient))
+        if typeof(gradient) == Matrix{Float64}
+            # @show gradient[1:7,1:7]
+            limited_grad = min.(gradient, 5)
+            limited_grad = max.(limited_grad, -5)
+            # @show limited_grad[1:7,1:7]
+            gradient = limited_grad
+        end
+
+        node.gradient = gradient
+        #@show node.gradient
+        #@show typeof(node.gradient)
+        println("FINAL INPUT GRADIENT: ",final_input_gradient)
+        if typeof(node) == Variable
+
+            if final_input_gradient
+                if isnothing(node.batch_gradient)
+                    println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    node.batch_gradient = gradient
+                else
+                    println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    node.batch_gradient .+= gradient
+                end
+            else
+                println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                node.batch_gradient = gradient
+            end
+
+            # if isnothing(node.batch_gradient)
+            #     println("INICJUJE GRADIENT W VARZE: " * node.name)
+            #     node.batch_gradient = gradient
+            #     node.recurrent_procedure = false;
+            # else
+            #     #@show node.batch_gradient
+            #     #@show typeof(node.batch_gradient)
+            #     #@show length(node.batch_gradient)
+            #     @show size(node.batch_gradient)
+            #     @show size(gradient)
+            #     println("GRADIENT JEST DODAWANY??", node.name)
+            #     node.batch_gradient .+= gradient
+
+            #     #DLA TESTU
+            #     node.batch_gradient = gradient
+
+            # end
         end
     end
-end
 
 function backward!(node::Constant) end
 function backward!(node::Variable) end
@@ -167,18 +220,75 @@ end
 
 function backward!(node::Operator)
     inputs = node.inputs
-    
+
+    @show typeof(node)
+    println("INPUTS: ")
+    for i in inputs
+        @show typeof(i)
+        @show size(i.output)
+    end
+
+    # @show size(node.gradient)
+
+    # @show inputs
+    # @show node.gradient
+
     gradients = backward(node, [input.output for input in inputs]..., node.gradient)
     #@show inputs
     #@show gradients
     println("START UPDATE!")
-    @show inputs
-    @show gradients
+    # @show inputs
+    # @show gradients
     for (input, gradient) in zip(inputs, gradients)
-        println("INPUT + GRADIENT")
-        @show input
-        @show gradient
-        update!(input, gradient)
+        # println("INPUT + GRADIENT")
+        # @show typeof(input)
+        # @show size(gradient)
+        # println("TU JEST GRADIENT 2")
+        # @show length(inputs)
+        # @show length(gradients)
+        # println("ROZMIAR GRADIENTU: " * string(size(gradient)))
+        # cnt = 0
+        # @show gradient
+
+        final_input_gradient = false
+
+        if length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)})
+            println("JESTEM W REC REC")
+            gradient = gradients[2]
+            # @show size(gradient)
+            # @show size(gradients[1])
+            # @show size(gradients[2])
+
+            # cnt += 1
+        elseif length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, Variable) && input.name == "ZMIENNE_WEJSCIE"
+            println("JESTEM W REC FIRST")
+            gradient = gradients[1]
+            # @show size(gradient)
+            # @show size(gradients[1])
+            # @show size(gradients[2])
+            # cnt += 1
+            final_input_gradient = true
+        end
+
+        if isa(node, BroadcastedOperator{typeof(softmax)})
+            @show "SOFTMAX_GRAD"
+            @show size(gradients)
+            @show size(gradient)
+            @show node.gradient
+            @show size(gradients[1])
+            @show size(gradients[2])
+            gradient = gradients
+        end
+        if isa(node, BroadcastedOperator{typeof(dense)})
+            @show length(gradients)
+            @show size(gradient)
+            @show node.gradient
+            @show size(gradients[1])
+            @show size(gradients[2])
+        end
+
+
+        update!(input, gradient, final_input_gradient)
     end
     println("KONIEC UPDATE!")
     return nothing
