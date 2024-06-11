@@ -25,11 +25,11 @@ function softmax_fun(x)
         # @show res
     # end
     # @show size(res)
-    @show size(x)
+    # @show size(x)
     # @show x
     col_sum = sum(exp.(x))
     res = exp.(x) ./ col_sum
-    @show size(res)
+    # @show size(res)
     # @show res
     return res
 end
@@ -37,7 +37,7 @@ end
 function softmax_jacob_matrix(s)
     # ZROB TO ZEBY DZIALALO NA POJEDYNCZEJ OBSERWACJI
     # res = []
-    @show size(s)
+    # @show size(s)
     # for i in 1:size(s)[1]
         # observation = s[i, :]
         # @show size(observation)
@@ -45,7 +45,7 @@ function softmax_jacob_matrix(s)
         # @show observation
         collection_length = size(s)[1]
         observation_jacobian = zeros(collection_length, collection_length)
-        @show size(observation_jacobian)
+        # @show size(observation_jacobian)
         for j in 1:collection_length
             for k in 1:collection_length
                 if j == k
@@ -65,68 +65,69 @@ end
 
 initial_recurrence(w_x::GraphNode, w_h::GraphNode, x::GraphNode, h::GraphNode) =
     let
-        println("INITIAL RECURRENCE")
+        # println("INITIAL RECURRENCE")
         return BroadcastedOperator(recurrence, w_x, w_h, x, h)
     end
-forward(n::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h) =
+forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h) =
     let
 
         # NAPRAWIANIE GRAFU
-        # n.inputs = n.inputs[2:length(n.inputs)]
+        # ind = length(n.inputs) == 3 ? 2 : 1
+        # n.inputs = n.inputs[ind:length(n.inputs)]
 
-        println("cojestwn [n]: ",n)
-        println("cojestwn: [n.inputs]: ",n.inputs)
-        println("cojestwn: [n.output]: ",n.output)
-        println("cojestwn: [n.gradient]: ",n.gradient)
-        println("cojestwn: [n.cache]: ",n.cache)
+        # println("cojestwn [n]: ",n)
+        # println("cojestwn: [n.inputs]: ",n.inputs)
+        # println("cojestwn: [n.output]: ",n.output)
+        # println("cojestwn: [n.gradient]: ",n.gradient)
+        # println("cojestwn: [n.cache]: ",n.cache)
 
-        @show "FORWARD RECURRENCE"
-        @show size(w_x)
-        @show size(x)
-        @show size(w_h)
-        @show size(h)
+        # @show "FORWARD RECURRENCE"
+        # @show size(w_x)
+        # @show size(x)
+        # @show size(w_h)
+        # @show size(h)
         if size(w_x)[2] == size(x)[1]
             res = w_x * x .+ w_h * h
         else
             res = w_h * h .+ x * w_x
         end
 
-        @show size(res)
+        # @show size(res)
         return res
     end
 backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, g) =
     let
-        @show "BACKWARD RECURRENCE"
-        @show size(w_x)
-        @show size(x)
-        @show size(w_h)
-        @show size(h)
-        @show size(g)
+        # @show "BACKWARD RECURRENCE"
+        # @show size(w_x)
+        # @show size(x)
+        # @show size(w_h)
+        # @show size(h)
+        # @show size(g)
         if size(g)[2] == size(x')[1]
-            println("BACKWARD RECURRENCE PRZED INPUTEM")
-            println("WYMIARY X: ",size(x))
-            println("WYMIARY H: ",size(h))
+            # println("BACKWARD RECURRENCE PRZED INPUTEM")
+            # println("WYMIARY X: ",size(x))
+            # println("WYMIARY H: ",size(h))
             g_wx = g * x'
             # g_wh = g .* h
             g_wh = g * h'
         else
-            println("BACKWARD RECURRENCE W REKURENCJI")
-            println("WYMIARY X: ",size(h))
-            println("WYMIARY H: ",size(w_x))
+            # println("BACKWARD RECURRENCE W REKURENCJI")
+            # println("WYMIARY X: ",size(h))
+            # println("WYMIARY H: ",size(w_x))
             g_wx = g * h'  #inny recurrence, argumenty są następujące: h -> wx; wx -> wh; wh -> x; x -> h
             # g_wh = g .* w_x 
             g_wh = g * w_x'
         end
 
-        @show size(g_wh)
-        @show size(g_wx)
-        println("KONIEC BACKWARD RECURRENCE")
+        # @show size(g_wh)
+        # @show size(g_wx)
+        # println("KONIEC BACKWARD RECURRENCE")
         return tuple(g_wx, g_wh)
     end
 
 recurrence(operator::BroadcastedOperator, w_x::GraphNode, w_h::GraphNode, x::GraphNode) =
     let
-        println("REPEATED RECURRENCE")
+        # println("REPEATED RECURRENCE")
         return BroadcastedOperator(recurrence, operator, w_x, w_h, x) #TODO tutaj jest dziwne to po lewo, chyba pod spodem powinno dzialac madrzej 
         # return BroadcastedOperator(recurrence, w_x, w_h, x, Constant(operator.output))
     end
@@ -135,20 +136,20 @@ recurrence(operator::BroadcastedOperator, w_x::GraphNode, w_h::GraphNode, x::Gra
 dense(x::GraphNode, w::GraphNode) = BroadcastedOperator(dense, x, w)
 forward(::BroadcastedOperator{typeof(dense)}, x, w) =
     let
-        @show "FORWARD DENSE"
-        @show size(w)
-        @show size(x)
+        # @show "FORWARD DENSE"
+        # @show size(w)
+        # @show size(x)
         return w * x
     end
 backward(::BroadcastedOperator{typeof(dense)}, x, w_out, g) =
     let
-        @show "BACKWARD DENSE"
+        # @show "BACKWARD DENSE"
         # @show size(x)
         # @show size(w_out)
         # @show size(g)
         # tuple(w' * g, g * x', g)
-        @show size(g)
-        @show size(x)
+        # @show size(g)
+        # @show size(x)
         tuple(1.0, (x * g)') # g * x' -> gradient dla wag out
     end
 
@@ -156,23 +157,23 @@ backward(::BroadcastedOperator{typeof(dense)}, x, w_out, g) =
 tanh(x::GraphNode) = BroadcastedOperator(tanh, x)
 forward(::BroadcastedOperator{typeof(tanh)}, x) =
     let
-        @show "TANH FORWARD"
+        # @show "TANH FORWARD"
         # @show x
         # println("CONVERTED TO TANH X")
         # @show tanh_fun.(x)
-        @show size(x)
+        # @show size(x)
         return tanh_fun.(x)
     end
 backward(::BroadcastedOperator{typeof(tanh)}, x, g) =
     let
-        @show "BACKWARD TANH"
+        # @show "BACKWARD TANH"
         # @show size(x)
         # @show size(g)
 
         dtan = (-(tanh_fun.(x) .^ 2) .+ 1);
 
-        @show size(dtan)
-        @show size(g)
+        # @show size(dtan)
+        # @show size(g)
         return tuple(g * (-(tanh_fun.(x) .^ 2) .+ 1)) # sprobowac z liczbami dualnymi pozniej
         # end
         # if size(x)[2] != size(g)[1]
@@ -189,15 +190,15 @@ backward(::BroadcastedOperator{typeof(tanh)}, x, g) =
 
 identity_transpose(x::GraphNode) = BroadcastedOperator(identity_transpose, x)
 forward(::BroadcastedOperator{typeof(identity_transpose)}, x) = let 
-    println("FORWARD IDENTITY")
-    @show size(x)
+    # println("FORWARD IDENTITY")
+    # @show size(x)
     x'    
 end
 
 
 backward(::BroadcastedOperator{typeof(identity_transpose)}, x, g) = let
-    println("BACKWARD IDENTITY")
-    @show size(g)
+    # println("BACKWARD IDENTITY")
+    # @show size(g)
     tuple(g')
 end
 

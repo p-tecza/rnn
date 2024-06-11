@@ -40,6 +40,7 @@ function visit(node::Operator, visited, order)
     if node ∉ visited
         push!(visited, node)
         for input in node.inputs
+            # if isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)}) 
             visit(input, visited, order)
         end
         push!(order, node)
@@ -111,9 +112,9 @@ function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
             # else
             #     node.output .-= lr * node.batch_gradient 
             # end
-            @show size(node.output)
-            @show size(node.batch_gradient)
-            @show node.name
+            # @show size(node.output)
+            # @show size(node.batch_gradient)
+            # @show node.name
             node.output .-= lr * node.batch_gradient
             fill(node.batch_gradient, 0)
         end
@@ -143,7 +144,7 @@ compute!(node::Operator) = node.output = forward(node, [input.output for input i
 
 update!(node::Constant, gradient, final_input_gradient::Bool) =
     let
-        println("UPDATE! = NOTHING??????")
+        # println("UPDATE! = NOTHING??????")
         nothing
     end
 update!(node::GraphNode, gradient, final_input_gradient::Bool) =
@@ -158,7 +159,7 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
         # end
         
         # println("ROZMIAR GRADIENTU: ", size(gradient))
-        println("TYP GRADIENTU: ", typeof(gradient))
+        # println("TYP GRADIENTU: ", typeof(gradient))
         if typeof(gradient) == Matrix{Float64}
             # @show gradient[1:7,1:7]
             limited_grad = min.(gradient, 5)
@@ -170,20 +171,27 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
         node.gradient = gradient
         #@show node.gradient
         #@show typeof(node.gradient)
-        println("FINAL INPUT GRADIENT: ",final_input_gradient)
+        # println("FINAL INPUT GRADIENT: ",final_input_gradient)
         if typeof(node) == Variable
 
             if final_input_gradient
                 if isnothing(node.batch_gradient)
-                    println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
                     node.batch_gradient = gradient
                 else
-                    println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    # println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
                     node.batch_gradient .+= gradient
                 end
-            else
-                println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
-                node.batch_gradient = gradient
+            elseif node.name != "ZMIENNE_WEJSCIE"
+                # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                if isnothing(node.batch_gradient)
+                    # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    node.batch_gradient = gradient
+                else
+                    # println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    node.batch_gradient .+= gradient
+                end
+                # node.batch_gradient = gradient
             end
 
             # if isnothing(node.batch_gradient)
@@ -206,27 +214,35 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
         end
     end
 
-function backward!(node::Constant) end
-function backward!(node::Variable) end
+function backward!(node::Constant, final_input_gradient::Bool) end
+function backward!(node::Variable, final_input_gradient::Bool) end
 function backward!(order::Vector; seed=1.0)
     result = last(order)
     result.gradient = seed
     @assert length(result.output) == 1 "Gradient is defined only for scalar functions"
-    for node in reverse(order)
-        backward!(node)
+    for (index, node) in enumerate(reverse(order))
+        # println("PODROZ W TYL: ", index, node)
+        if index == length(order) - 4 # bardzo specyficzne rozwiazanie
+            backward!(node, true)
+        end
+        backward!(node, false)
     end
     return nothing
 end
 
-function backward!(node::Operator)
+function backward!(node::Operator, final_input_gradient::Bool)
     inputs = node.inputs
 
-    @show typeof(node)
-    println("INPUTS: ")
-    for i in inputs
-        @show typeof(i)
-        @show size(i.output)
-    end
+    # @show typeof(node)
+
+    
+
+    # println("INPUTS: ")
+    # for i in inputs
+    #     @show typeof(i)
+    #     @show size(i.output)
+        
+    # end
 
     # @show size(node.gradient)
 
@@ -236,7 +252,7 @@ function backward!(node::Operator)
     gradients = backward(node, [input.output for input in inputs]..., node.gradient)
     #@show inputs
     #@show gradients
-    println("START UPDATE!")
+    # println("START UPDATE!")
     # @show inputs
     # @show gradients
     for (input, gradient) in zip(inputs, gradients)
@@ -250,10 +266,9 @@ function backward!(node::Operator)
         # cnt = 0
         # @show gradient
 
-        final_input_gradient = false
+        
 
         if length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)})
-            println("JESTEM W REC REC")
             gradient = gradients[2]
             # @show size(gradient)
             # @show size(gradients[1])
@@ -261,35 +276,14 @@ function backward!(node::Operator)
 
             # cnt += 1
         elseif length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, Variable) && input.name == "ZMIENNE_WEJSCIE"
-            println("JESTEM W REC FIRST")
             gradient = gradients[1]
             # @show size(gradient)
             # @show size(gradients[1])
             # @show size(gradients[2])
             # cnt += 1
-            final_input_gradient = true
         end
-
-        if isa(node, BroadcastedOperator{typeof(softmax)})
-            @show "SOFTMAX_GRAD"
-            @show size(gradients)
-            @show size(gradient)
-            @show node.gradient
-            @show size(gradients[1])
-            @show size(gradients[2])
-            gradient = gradients
-        end
-        if isa(node, BroadcastedOperator{typeof(dense)})
-            @show length(gradients)
-            @show size(gradient)
-            @show node.gradient
-            @show size(gradients[1])
-            @show size(gradients[2])
-        end
-
-
         update!(input, gradient, final_input_gradient)
     end
-    println("KONIEC UPDATE!")
+    # println("KONIEC UPDATE!")
     return nothing
 end

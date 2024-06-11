@@ -51,7 +51,7 @@ x1dim = reshape(train_data.features, 28 * 28, :) # reshape 28×28 pixels into a 
 yhot  = Flux.onehotbatch(train_data.targets, 0:9) # make a 10×60000 OneHotMatrix
 println("SIZE OF TEST DATA: "* string(size(x1dim)))
 
-PART_DATA_AMOUNT = 1;
+PART_DATA_AMOUNT = 2;
 
 part_of_train_data = x1dim[:,1:PART_DATA_AMOUNT]
 splitted_train_data = [part_of_train_data[1:196,:],part_of_train_data[197:392,:],part_of_train_data[393:588,:],part_of_train_data[589:end,:]];
@@ -84,13 +84,17 @@ println("Przed forward")
 
 #TODO jest popsute, siadz do tego na spokojnie...
 
-IT_NUM = 1
-BATCH_SIZE = 5
+# IT_NUM = 20
+BATCH_SIZE = 1
 
-for i in 1:IT_NUM
+for i in 1:5
     blad_petla = forward!(graph)
-    @show blad_petla
     backward!(graph)
-    update_weights!(graph, 0.1, IT_NUM) # IT_NUM do zmiany pozniej na batch size
+    if i % BATCH_SIZE == 0
+        println("Funkcja starty: ",blad_petla)
+        update_weights!(graph, 0.1, BATCH_SIZE)
+    end
 end
 blad = forward!(graph)
+
+println("Funkcja starty: ",blad)
