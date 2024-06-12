@@ -70,18 +70,18 @@ end
 
 include("Operators.jl")
 
-function build_graph(input1, input2, input3, input4, start_hidden, output, i_weights, h_weights, out_weights)
+function build_graph(input1, input2, input3, input4, start_hidden, output, i_weights, h_weights, out_weights, biases)
 
     known_output = output
-    i_weights = Variable(i_weights, name="ZMIENNE_WEJSCIE")
-    h_weights = Variable(h_weights, name="ZMIENNE_UKRYTE")
+    # i_weights = Variable(i_weights, name="ZMIENNE_WEJSCIE")
+    # h_weights = Variable(h_weights, name="ZMIENNE_UKRYTE")
     h = Constant(start_hidden)
     recurrence_started = false
     # @show size(full_input)
-    res1 = initial_recurrence(i_weights, h_weights, input1, h) |> tanh # to tanh raczej nie tu
-    res2 = recurrence(res1, i_weights, h_weights, input2) |> tanh
-    res3 = recurrence(res2, i_weights, h_weights, input3) |> tanh
-    res = recurrence(res3, i_weights, h_weights, input4) |> tanh
+    res1 = initial_recurrence(i_weights, h_weights, input1, h, biases) |> tanh # to tanh raczej nie tu
+    res2 = recurrence(i_weights, h_weights, input2, res1, biases) |> tanh
+    res3 = recurrence(i_weights, h_weights, input3, res2, biases) |> tanh
+    res = recurrence(i_weights, h_weights, input4, res3, biases) |> tanh
 
     # for lay in input
     #     # @show size(lay)
@@ -95,9 +95,9 @@ function build_graph(input1, input2, input3, input4, start_hidden, output, i_wei
     #     end
     # end
 
-    out_weights = Variable(out_weights, name="ZMIENNE_OUT") #tutaj też optymalizacja potrzebna
-    res = dense(res, out_weights) |> identity_transpose
-    e = cross_entropy_loss(res, known_output)
+    # out_weights = Variable(out_weights, name="ZMIENNE_OUT") #tutaj też optymalizacja potrzebna
+    l_dense = dense(res, out_weights) |> identity_transpose
+    e = cross_entropy_loss(l_dense, known_output)
 
     return topological_sort(e)
 end
@@ -179,15 +179,20 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
         
         # println("ROZMIAR GRADIENTU: ", size(gradient))
         # println("TYP GRADIENTU: ", typeof(gradient))
-        if typeof(gradient) == Matrix{Float64}
-            # @show gradient[1:7,1:7]
-            limited_grad = min.(gradient, 5)
-            limited_grad = max.(limited_grad, -5)
-            # @show limited_grad[1:7,1:7]
-            gradient = limited_grad
-        end
+        # if typeof(gradient) == Matrix{Float64}
+        #     # @show gradient[1:7,1:7]
+        #     limited_grad = min.(gradient, 5)
+        #     limited_grad = max.(limited_grad, -5)
+        #     # @show limited_grad[1:7,1:7]
+        #     gradient = limited_grad
+        # end
 
         node.gradient = gradient
+
+
+        if isa(node,Variable) && node.name == "BIASES"
+            @show node.gradient
+        end
 
         if typeof(node) == Variable
 
@@ -210,6 +215,9 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
                 node.batch_gradient = gradient
             else
                 # println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                println(node.name)
+                println(size(gradient))
+                println(size(node.batch_gradient))
                 node.batch_gradient .+= gradient
             end
 
@@ -249,22 +257,13 @@ end
 
 function backward!(node::Operator, final_input_gradient::Bool)
     inputs = node.inputs
-
-    # @show typeof(node)
-
-    
-
     # println("INPUTS: ")
     # for i in inputs
     #     @show typeof(i)
     #     @show size(i.output)
-        
     # end
 
     # @show size(node.gradient)
-
-    # @show inputs
-    # @show node.gradient
 
     gradients = backward(node, [input.output for input in inputs]..., node.gradient)
     #@show inputs
@@ -273,32 +272,14 @@ function backward!(node::Operator, final_input_gradient::Bool)
     # @show inputs
     # @show gradients
     for (input, gradient) in zip(inputs, gradients)
-        # println("INPUT + GRADIENT")
-        # @show typeof(input)
+
         # @show size(gradient)
-        # println("TU JEST GRADIENT 2")
-        # @show length(inputs)
-        # @show length(gradients)
-        # println("ROZMIAR GRADIENTU: " * string(size(gradient)))
-        # cnt = 0
-        # @show gradient
-
-        
-
-        if length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)})
-            gradient = gradients[2]
-            # @show size(gradient)
-            # @show size(gradients[1])
-            # @show size(gradients[2])
-
-            # cnt += 1
-        elseif length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, Variable) && input.name == "ZMIENNE_WEJSCIE"
-            gradient = gradients[1]
-            # @show size(gradient)
-            # @show size(gradients[1])
-            # @show size(gradients[2])
-            # cnt += 1
-        end
+        # @show input
+        # if length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)})
+        #     gradient = gradients[2]
+        # elseif length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, Variable) && input.name == "ZMIENNE_WEJSCIE"
+        #     gradient = gradients[1]
+        # end
         update!(input, gradient, final_input_gradient)
     end
     # println("KONIEC UPDATE!")

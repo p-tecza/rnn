@@ -10,75 +10,65 @@ function tanh_fun(x)
     return (exp.(x) - exp.(-x)) / (exp.(x) + exp.(-x))
 end
 
-initial_recurrence(w_x::GraphNode, w_h::GraphNode, x::GraphNode, h::GraphNode) =
+initial_recurrence(w_i::GraphNode, w_h::GraphNode, i::GraphNode, h::GraphNode, b::GraphNode) =
     let
         # println("INITIAL RECURRENCE")
-        return BroadcastedOperator(recurrence, w_x, w_h, x, h)
+        return BroadcastedOperator(recurrence, w_i, w_h, i, h, b)
     end
-recurrence(operator::BroadcastedOperator, w_x::GraphNode, w_h::GraphNode, x::GraphNode) =
+recurrence(w_i::GraphNode, w_h::GraphNode, i::GraphNode, operator::BroadcastedOperator, bias::GraphNode) =
     let
         # println("REPEATED RECURRENCE")
-        return BroadcastedOperator(recurrence, operator, w_x, w_h, x) #TODO tutaj jest dziwne to po lewo, chyba pod spodem powinno dzialac madrzej 
+        return BroadcastedOperator(recurrence, w_i, w_h, operator, bias, i) #TODO tutaj jest dziwne to po lewo, chyba pod spodem powinno dzialac madrzej 
         # return BroadcastedOperator(recurrence, w_x, w_h, x, Constant(operator.output))
     end
-forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h) =
+forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b) =
     let
 
-        # println("X PRZED FORWARD RECURRENCE: ", size(x))
-        # @show(size())
-        # @show length(w_x)
-        if length(w_x) == 12544
-            res = w_x * x .+ w_h * h
-            # @show "a"
-            # println("MAX WX: ", maximum(w_x))
-            # println("MAX WH: ", maximum(w_h))
-        else
-            # @show "b"
-            res = w_h * h .+ x * w_x
-            # println("MAX WX: ", maximum(w_h))
-            # println("MAX WH: ", maximum(x))
-        end
-        # println("ZWYKLE H: ", h)
+        # if length(w_x) == 12544
+            
+        # else
+        #     res = w_h * h .+ x * w_x
+        # end
 
-        # println("X Po FORWARD RECURRENCE: ", res)
-        # @show size(res)
+        # @show size(w_x)
+        # @show size(w_h)
+        # @show size(x)
+        # @show size(h)
+
+        if size(w_x)[2] != size(x)[1]
+            # switch values
+            buffer = x
+            x = b
+            b = h
+            h = buffer
+        end
+        
+        res = w_x * x .+ w_h * h .+ b
         return res
     end
-backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, g) =
+backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b, g) =
     let
         # @show "BACKWARD RECURRENCE"
-        # @show size(w_x)
-        # @show size(x)
-        # @show size(w_h)
-        # @show size(h)
-        # @show size(g)
 
-        # @show length(g)
-        # @show size(g)
-        # @show size(w_x)
-        # @show size(w_h)
-        if size(w_h)[2] != 196
-            # println("BACKWARD RECURRENCE PRZED INPUTEM")
-            # println("WYMIARY X: ",size(x))
-            # println("WYMIARY H: ",size(h))
-            g_wx = g * x'
-            # g_wh = g .* h
-            g_wh = g * h'
-        else
-            # println("BACKWARD RECURRENCE W REKURENCJI")
-            # println("WYMIARY X: ",size(h))
-            # println("WYMIARY H: ",size(w_x))
-            g_wx = g * h'  #inny recurrence, argumenty są następujące: h -> wx; wx -> wh; wh -> x; x -> h
-            # g_wh = g .* w_x 
-            g_wh = g * w_x'
+        if size(h)[1] == 196
+            # switch values
+            buffer = x
+            x = b
+            b = h
+            h = buffer
         end
 
-        # @show size(g_wh)
-        # @show size(g_wx)
-        # println("KONIEC BACKWARD RECURRENCE")
-        # @show size(g)
-        # println("GRAD W BACKWARD recurrence: ", g)
-        return tuple(g_wx, g_wh)
+        # if size(w_h)[2] != 196
+            g_wi = g * x'
+            g_wh = g * h'
+            g_h = w_h * g
+        # else
+        #     g_wx = g * h'  #inny recurrence, argumenty są następujące: h -> wx; wx -> wh; wh -> x; x -> h
+        #     g_wh = g * w_x'
+        #     g_h = g * x'
+        # end
+        # @show size(tuple(g_wx, g_wh))
+        return tuple(g_wi, g_wh, g_h, g)
     end
 
 
@@ -91,7 +81,6 @@ forward(::BroadcastedOperator{typeof(dense)}, x, w) =
         # @show w
         # println("FORWARD DENSE PRZED: ", x)
         # println("FORWARD DENSE PO: ", w*x)
-
         return w * x
     end
 backward(::BroadcastedOperator{typeof(dense)}, x, w_out, g) =
@@ -105,7 +94,14 @@ backward(::BroadcastedOperator{typeof(dense)}, x, w_out, g) =
         # @show size(x)\
         # @show size(g)
         # println("GRAD W BACKWARD DENSE: ", g)
-        tuple(1.0, (x * g)') # g * x' -> gradient dla wag out
+        # @show size(g)
+        # @show typeof(g)
+        # @show g
+        # @show size(x)
+        # @show typeof(x)
+        # @show size(w_out)
+        # @show typeof(x)
+        tuple(w_out' * g, g * x') # g * x' -> gradient dla wag out
     end
 
 
@@ -133,11 +129,14 @@ backward(::BroadcastedOperator{typeof(tanh)}, x, g) =
         # @show size(g)
         # println("GRAD W BACKWARD TANH: ", g)
 
+        # @show g
+        # @show size(g)
+        # @show size(x)
         dtan = (-(tanh_fun.(x) .^ 2) .+ 1);
 
         # @show size(dtan)
         # @show size(g)
-        return tuple(g * (-(tanh_fun.(x) .^ 2) .+ 1)) # sprobowac z liczbami dualnymi pozniej
+        return tuple(g .* (-(tanh_fun.(x) .^ 2) .+ 1)) # sprobowac z liczbami dualnymi pozniej
         # end
         # if size(x)[2] != size(g)[1]
         #     return tuple(g' * (-(tanh_fun.(x) .^ 2) .+ 1)) # sprobowac z liczbami dualnymi pozniej
@@ -165,90 +164,11 @@ backward(::BroadcastedOperator{typeof(identity_transpose)}, x, g) = let
     # @show size(g)
     # @show size(g)
     # println("GRAD W BACKWARD IDENTITY: ", g)
-    tuple(g')
+    # @show size(g)
+    # @show g
+    # @show g'
+    return tuple(g)
 end
-
-# softmax(x::GraphNode) = BroadcastedOperator(softmax, x)
-# forward(::BroadcastedOperator{typeof(softmax)}, x) = let
-#     @show "FORWARD SOFTMAX"
-#     @show size(x)
-#     @show size(x[:,1])
-
-#     cosik = broadcast(softmax_fun, x[:,i] for i in 1:size(x)[2])
-#     @show size(cosik)
-#     @show length(cosik)
-#     # @show cosik
-#     rearranged = mapreduce(permutedims, vcat, cosik)
-#     @show size(rearranged)
-#     return rearranged
-# end
-# backward(::BroadcastedOperator{typeof(softmax)}, x, g) = let
-#     @show "BACKWARD SOFTMAX"
-#     @show size(x)
-#     s = broadcast(softmax_fun, x[:,i] for i in 1:size(x)[2])
-#     s = mapreduce(permutedims, vcat, s)
-#     @show size(s)
-#     jac = broadcast(softmax_jacob_matrix, s[i,:] for i in size(s)[1])
-#     @show size(g)
-#     @show size(jac)
-#     return g * jac
-# end
-
-# cross_entropy_loss(y_hat::GraphNode, y::GraphNode) = BroadcastedOperator(cross_entropy_loss, y_hat, y)
-# forward(::BroadcastedOperator{typeof(cross_entropy_loss)}, y_hat, y) =
-#     let
-#         #TODO jakos dziwnie to jest liczone
-#         @show "FORWARD CROSS_ENTROPY"
-#         # @show size(y_hat)
-#         # @show size(y)
-#         num_of_clasiffications = 0 # tu bylo global bez wartosci
-#         num_of_correct_clasiffications = 0 # tu bylo global bez wartosci
-#         num_of_clasiffications += 1
-#         if argmax(y_hat) == argmax(y)
-#             num_of_correct_clasiffications += 1
-#         end
-
-#         # @show y'
-#         # @show y_hat'
-#         y_hat = y_hat'
-
-#         @show size(y)
-#         @show size(y')
-#         @show size(y_hat)
-
-#         # println("SOFTMAX OD Y")
-#         # softmax_fun(y_hat)
-#         # println("SOFTMAX OD Y_HAT")
-#         # smax = softmax_fun(y_hat')
-
-#         # smax_jac = softmax_jacob_matrix(smax)
-
-#         # mean_in_y_hat = mean(y_hat)
-
-#         # y_hat = y_hat.()
-
-#         # y_hat = y_hat .- maximum(y_hat)
-#         # y_hat = exp.(y_hat) ./ sum(exp.(y_hat))
-#         # loss = sum(log.(y_hat) .* y) * -1.0
-
-#         # return loss
-#         return crossentropy(y_hat, y, size(y_hat))
-#     end
-# backward(node::BroadcastedOperator{typeof(cross_entropy_loss)}, y_hat, y, g) =
-#     let
-#         @show "BACKWARD CROSS_ENTROPY"
-#         # y_hat = y_hat .- maximum(y_hat)
-#         # y_hat = exp.(y_hat) ./ sum(exp.(y_hat))
-#         # @show g
-#         # @show tuple(g .* (y_hat .- y))
-#         # mean_d = similar(y_hat)
-#         mean_d = fill(1 / size(y_hat)[2], size(y_hat))
-#         @show size(y_hat)
-#         @show g
-#         @show size(g)
-#         @show tuple(g .* mean_d)
-#         return tuple(g .* mean_d)
-#     end
 
 cross_entropy_loss(y_hat::GraphNode, y::GraphNode) = BroadcastedOperator(cross_entropy_loss, y_hat, y)
 forward(::BroadcastedOperator{typeof(cross_entropy_loss)}, y_hat, y) =
@@ -287,7 +207,10 @@ backward(node::BroadcastedOperator{typeof(cross_entropy_loss)}, y_hat, y, g) =
         # @show(y)
         # @show((y_hat .- y))
         # println("GRAD W BACKWARD C_E_L (PO): ", g .* (y_hat .- y))
-
+        # @show "BACKWARD C_E_L"
+        # @show g .* (y_hat .- y)
+        # @show g
+        # @show g * (y_hat .- y)
         return tuple(g .* (y_hat .- y))
     end
 
