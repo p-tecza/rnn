@@ -13,15 +13,15 @@ end
 initial_recurrence(w_i::GraphNode, w_h::GraphNode, i::GraphNode, h::GraphNode, b::GraphNode) =
     let
         # println("INITIAL RECURRENCE")
-        return BroadcastedOperator(recurrence, w_i, w_h, i, h, b)
+        return BroadcastedOperator(recurrence, w_i, w_h, b, i, h)
     end
 recurrence(w_i::GraphNode, w_h::GraphNode, i::GraphNode, operator::BroadcastedOperator, bias::GraphNode) =
     let
         # println("REPEATED RECURRENCE")
-        return BroadcastedOperator(recurrence, w_i, w_h, operator, bias, i) #TODO tutaj jest dziwne to po lewo, chyba pod spodem powinno dzialac madrzej 
+        return BroadcastedOperator(recurrence, w_i, w_h, bias, operator, i) #TODO tutaj jest dziwne to po lewo, chyba pod spodem powinno dzialac madrzej 
         # return BroadcastedOperator(recurrence, w_x, w_h, x, Constant(operator.output))
     end
-forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b) =
+forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, b, x, h) =
     let
 
         # if length(w_x) == 12544
@@ -38,23 +38,24 @@ forward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b) =
         if size(w_x)[2] != size(x)[1]
             # switch values
             buffer = x
-            x = b
-            b = h
+            x = h
             h = buffer
         end
         
         res = w_x * x .+ w_h * h .+ b
+
+        # println("WYJSCIE Z RECURRENCE H=", res)
+
         return res
     end
-backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b, g) =
+backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, b, x, h, g) =
     let
         # @show "BACKWARD RECURRENCE"
 
         if size(h)[1] == 196
             # switch values
             buffer = x
-            x = b
-            b = h
+            x = h
             h = buffer
         end
 
@@ -62,13 +63,14 @@ backward(::BroadcastedOperator{typeof(recurrence)}, w_x, w_h, x, h, b, g) =
             g_wi = g * x'
             g_wh = g * h'
             g_h = w_h * g
+            g_b = g
         # else
         #     g_wx = g * h'  #inny recurrence, argumenty są następujące: h -> wx; wx -> wh; wh -> x; x -> h
         #     g_wh = g * w_x'
         #     g_h = g * x'
         # end
         # @show size(tuple(g_wx, g_wh))
-        return tuple(g_wi, g_wh, g_h, g)
+        return tuple(g_wi, g_wh, g_b, g_h)
     end
 
 
@@ -108,6 +110,7 @@ backward(::BroadcastedOperator{typeof(dense)}, x, w_out, g) =
 tanh(x::GraphNode) = BroadcastedOperator(tanh, x)
 forward(::BroadcastedOperator{typeof(tanh)}, x) =
     let
+        # println("WEJSCIE DO TANH, H=", x)
         # @show "TANH FORWARD"
         # @show x
         # println("CONVERTED TO TANH X")
@@ -230,14 +233,3 @@ backward(node::BroadcastedOperator{typeof(mse)}, y_hat, y, g) =
         res_mse = g .* 2 * (y_hat .- y)
         return tuple(res_mse)
     end
-
-
-# logsoftmax(y_hat; dims) = y_hat .- log.(sum(exp.(y_hat), dims=dims))
-crossentropy(y_hat, y, dims, agg=mean) = agg(-sum(y .* log.(y_hat .+ 3.248761f-10); dims))
-
-
-# mean(-sum(y .* y_hat .- log.(sum(exp.(y_hat), dims = dims)); dims))
-
-function mean_derivative()
-
-end

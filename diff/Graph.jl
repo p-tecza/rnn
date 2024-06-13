@@ -82,20 +82,6 @@ function build_graph(input1, input2, input3, input4, start_hidden, output, i_wei
     res2 = recurrence(i_weights, h_weights, input2, res1, biases) |> tanh
     res3 = recurrence(i_weights, h_weights, input3, res2, biases) |> tanh
     res = recurrence(i_weights, h_weights, input4, res3, biases) |> tanh
-
-    # for lay in input
-    #     # @show size(lay)
-    #     layer_input = lay #[:,1]
-    #     # layer_input = Constant(layer_input)
-    #     if recurrence_started
-            
-    #     else
-            
-    #         recurrence_started = true
-    #     end
-    # end
-
-    # out_weights = Variable(out_weights, name="ZMIENNE_OUT") #tutaj też optymalizacja potrzebna
     l_dense = dense(res, out_weights) |> identity_transpose
     e = cross_entropy_loss(l_dense, known_output)
 
@@ -110,6 +96,9 @@ function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
             # else
 
             # end
+
+            # println(node.name,".output:")
+
             node.batch_gradient ./= batch_size
 
             # if length(node.output) == 1
@@ -128,14 +117,21 @@ function update_weights!(graph::Vector, lr::Float64, batch_size::Int64)
             # node.output = weights_to_rescale
             # node.output = 2 .* ((node.output .- minimum(weights_to_rescale)) ./ (maximum(weights_to_rescale) - minimum(weights_to_rescale))) .- 1
             
-            if isa(node.output,Matrix)
+            if isa(node.output, Matrix)
+
+
                 # println("maxweight: ", maximum(node.output))
                 # println("minweight: ", minimum(node.output))
+
+                # println("WAGA ",node.name,":",node.output[1:10])
+            elseif node.name == "BIASES"
+                # println("BIASES: ",node.output[1:10])
             end
 
 
             # println("UPDATE WEIGHTS WAGI PO: ",node.output)
-            fill(node.batch_gradient, 0)
+            node.batch_gradient = nothing
+            # fill(node.batch_gradient, nothing)
         end
     end
 end
@@ -161,12 +157,12 @@ compute!(node::Constant) = nothing
 compute!(node::Variable) = nothing
 compute!(node::Operator) = node.output = forward(node, [input.output for input in node.inputs]...)
 
-update!(node::Constant, gradient, final_input_gradient::Bool) =
+update!(node::Constant, gradient, final_input_gradient::String) =
     let
         # println("UPDATE! = NOTHING??????")
         nothing
     end
-update!(node::GraphNode, gradient, final_input_gradient::Bool) =
+update!(node::GraphNode, gradient, final_input_gradient::String) =
     let
         # @show gradient
         # for i in eachindex(gradient)
@@ -190,52 +186,76 @@ update!(node::GraphNode, gradient, final_input_gradient::Bool) =
         node.gradient = gradient
 
 
-        if isa(node,Variable) && node.name == "BIASES"
-            @show node.gradient
-        end
+        # if isa(node,Variable) && node.name == "BIASES"
+        #     @show node.gradient
+        # end
 
         if typeof(node) == Variable
+            if final_input_gradient == "HIDDEN" && (node.name == "ZMIENNE_WEJSCIE" || node.name == "BIASES")
+                if isnothing(node.batch_gradient)
+                    # println("[A] INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    if node.name == "BIASES"
+                        # println("PRZYPISUJE BIASES")
+                    elseif node.name == "ZMIENNE_WEJSCIE"
+                        # println("PRZYPISUJE WEJSCIE")
+                    end
+                    node.batch_gradient = gradient
+                else
+                    # println("[A] DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    if node.name == "BIASES"
+                        # println("DODAJE BIASES")
+                    elseif node.name == "ZMIENNE_WEJSCIE"
+                        # println("DODAJE WEJSCIE")
+                    end
 
-            # if final_input_gradient
-            #     if isnothing(node.batch_gradient)
-            #         # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
-            #         node.batch_gradient = gradient
-            #     else
-            #         # println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
-            #         node.batch_gradient .+= gradient
-            #     end
-            # elseif node.name != "ZMIENNE_WEJSCIE"
-            #     # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
-                
-            #     # node.batch_gradient = gradient
-            # end
-
-            if isnothing(node.batch_gradient)
-                # println("INICJUJE BATCH GRADIENT W VARZE: " * node.name)
-                node.batch_gradient = gradient
-            else
-                # println("DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
-                println(node.name)
-                println(size(gradient))
-                println(size(node.batch_gradient))
-                node.batch_gradient .+= gradient
+                    node.batch_gradient .+= gradient
+                end
+            elseif final_input_gradient == "HIDDEN" && node.name == "ZMIENNE_UKRYTE"
+                if isnothing(node.batch_gradient)
+                    # println("[B] INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    # println("PRZYPISUJE HIDDEN")
+                    node.batch_gradient = gradient
+                else
+                    # println(node.name,":",node)
+                    # println("[B] DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    # println(node.name)
+                    # println(size(gradient))
+                    # println(size(node.batch_gradient))
+                    # println("DODAJE HIDDEN")
+                    node.batch_gradient .+= gradient
+                end
+            elseif node.name == "ZMIENNE_OUT"
+                if isnothing(node.batch_gradient)
+                    # println("PRZYPISUJE OUT")
+                    # println("[B] INICJUJE BATCH GRADIENT W VARZE: " * node.name)
+                    node.batch_gradient = gradient
+                else
+                    # println("[B] DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
+                    # println(node.name)
+                    # println(size(gradient))
+                    # println(size(node.batch_gradient))
+                    # println("DODAJE OUT")
+                    node.batch_gradient .+= gradient
+                end
             end
-
         end
     end
 
-function backward!(node::Constant, final_input_gradient::Bool) end
-function backward!(node::Variable, final_input_gradient::Bool) end
+function backward!(node::Constant, final_input_gradient::String) end
+function backward!(node::Variable, final_input_gradient::String) end
 function backward!(order::Vector; seed=1.0)
     result = last(order)
     result.gradient = seed
     @assert length(result.output) == 1 "Gradient is defined only for scalar functions"
     for (index, node) in enumerate(reverse(order))
         # println("PODROZ W TYL: ", index, node)
-        if index == length(order) - 4 # bardzo specyficzne rozwiazanie
-            backward!(node, true)
+        if index == 16 # 16 to index ostatniej pierwszej warstwy recurrence, z niej bierzemy gradient DLA HIDDEN (a dla INPUT i BIASES index 7)
+            # println("INDEX: ",index," NODE: ",node)
+            backward!(node, "")
+        elseif index == 7
+            backward!(node, "HIDDEN") # "INPUT_AND_BIASES"
         else
-            backward!(node, false)
+            backward!(node, "")
         end
         if isa(node, BroadcastedOperator) # obcinanie gradientu
             gradient = node.gradient
@@ -255,7 +275,7 @@ function backward!(order::Vector; seed=1.0)
     return nothing
 end
 
-function backward!(node::Operator, final_input_gradient::Bool)
+function backward!(node::Operator, final_input_gradient::String)
     inputs = node.inputs
     # println("INPUTS: ")
     # for i in inputs
@@ -273,6 +293,7 @@ function backward!(node::Operator, final_input_gradient::Bool)
     # @show gradients
     for (input, gradient) in zip(inputs, gradients)
 
+        # @show size(gradient)
         # @show size(gradient)
         # @show input
         # if length(gradients) > 1 && isa(node, BroadcastedOperator{typeof(recurrence)}) && isa(input, BroadcastedOperator{typeof(tanh)})

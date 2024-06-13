@@ -40,22 +40,19 @@ Whh = glorot_uniform(hidden_output_size, hidden_output_size) # wagi wyjsc (64 wy
 # @show Whh
 Why = glorot_uniform(output_size, hidden_output_size)
 
-h = glorot_uniform(hidden_output_size) # random initial hidden state
+start_hidden = zeros(hidden_output_size)
+# h = zeros(hidden_output_size) # random initial hidden state
 
-biases = glorot_uniform(hidden_output_size)
+biases = zeros(hidden_output_size)
 
-# Wxh = randn(Float32, hidden_output_size, input_size) # pojedynczy neuron, 196 wejsc, 64 wyjscia -> wagi dla wejsc
-# # @show Wxh
-# Whh = randn(Float32, hidden_output_size, hidden_output_size) # wagi wyjsc (64 wyjscia)
-# # @show Whh
-# Why = randn(Float32, output_size, hidden_output_size)
-# @show Why
-# h = rand(Float32, hidden_output_size) # random initial hidden state
 @show size(Why)
 @show typeof(Why)
 # b   = randn(Float32, output_size)
 
 using MLDatasets, Flux
+
+
+PART_DATA_AMOUNT = 60000;
 train_data = MLDatasets.MNIST(split=:train)
 x1dim = reshape(train_data.features, 28 * 28, :) # reshape 28×28 pixels into a vector of pixels
 yhot = Flux.onehotbatch(train_data.targets, 0:9) # make a 10×60000 OneHotMatrix
@@ -65,7 +62,7 @@ y_train_part = yhot[:, 1:PART_DATA_AMOUNT]
 
 # println("SIZE OF TEST DATA: " * string(size(x1dim)))
 
-PART_DATA_AMOUNT = 60000;
+
 
 # @show y
 @show size(y_train_part)
@@ -81,8 +78,6 @@ PART_DATA_AMOUNT = 60000;
 # println("SPLITTED TRAIN 4: "* string(size(splitted_train_data[4])))
 
 #TODO DO POCIĘCIA NA MNIEJSZE BATCHE (JAK JUZ BEDZIE 60k DANYCH)
-
-start_hidden = randn(Float32, hidden_output_size)
 
 
 x1_train = Constant(part_of_train_data[1:196, 1])
@@ -107,7 +102,7 @@ for x in graph
     @show typeof(x)
 end
 
-println("Przed forward")
+# println("Przed forward")
 #@show graph
 #@show last_order_output
 
@@ -156,20 +151,20 @@ x3_test = Constant(part_of_test_data[393:588, 1])
 x4_test = Constant(part_of_test_data[589:end, 1])
 y_test = Constant(y_test_part[:, 1])
 
-hidden_init_state = glorot_uniform(hidden_output_size) # random initial hidden state
+# hidden_init_state = glorot_uniform(hidden_output_size) # random initial hidden state
 
-test_graph = build_graph(x1_test, x2_test, x3_test, x4_test, hidden_init_state, y_test, i_weights, h_weights, o_weights, b)
+println("WAGA i_weights",i_weights,":",i_weights.output[1:10])
+println("WAGA h_weights",h_weights,":",h_weights.output[1:10])
+println("WAGA o_weights",o_weights,":",o_weights.output[1:10])
+println("BIASES POZA: ",b, ":",b.output[1:10])
+
+test_graph = build_graph(x1_test, x2_test, x3_test, x4_test, start_hidden, y_test, i_weights, h_weights, o_weights, b)
 
 global num_of_correct_clasiffications = 0
 global num_of_clasiffications = 0
 
 for i in 1:PART_DATA_TEST_AMOUNT
     loss_test = forward!(test_graph)
-    # backward!(graph)
-    # if i % BATCH_SIZE == 0
-    #     println("Funkcja starty: ", blad_petla)
-    #     update_weights!(graph, 0.1, BATCH_SIZE)
-    # end
     x1_test.output = part_of_test_data[1:196, i]
     x2_test.output = part_of_test_data[197:392, i]
     x3_test.output = part_of_test_data[393:588, i]
