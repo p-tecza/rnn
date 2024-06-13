@@ -193,21 +193,8 @@ update!(node::GraphNode, gradient, final_input_gradient::String) =
         if typeof(node) == Variable
             if final_input_gradient == "HIDDEN" && (node.name == "ZMIENNE_WEJSCIE" || node.name == "BIASES")
                 if isnothing(node.batch_gradient)
-                    # println("[A] INICJUJE BATCH GRADIENT W VARZE: " * node.name)
-                    if node.name == "BIASES"
-                        # println("PRZYPISUJE BIASES")
-                    elseif node.name == "ZMIENNE_WEJSCIE"
-                        # println("PRZYPISUJE WEJSCIE")
-                    end
                     node.batch_gradient = gradient
                 else
-                    # println("[A] DODAJE GRADIENT DO BATCH GRADIENT W VARZE: ", node.name)
-                    if node.name == "BIASES"
-                        # println("DODAJE BIASES")
-                    elseif node.name == "ZMIENNE_WEJSCIE"
-                        # println("DODAJE WEJSCIE")
-                    end
-
                     node.batch_gradient .+= gradient
                 end
             elseif final_input_gradient == "HIDDEN" && node.name == "ZMIENNE_UKRYTE"

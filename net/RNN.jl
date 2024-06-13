@@ -64,20 +64,6 @@ y_train_part = yhot[:, 1:PART_DATA_AMOUNT]
 
 
 
-# @show y
-@show size(y_train_part)
-@show size(yhot)
-"ok"
-
-
-
-# println("PART OF TRAIN DATA SIZE: "* string(size(part_of_train_data)))
-# println("SPLITTED TRAIN 1: "* string(size(splitted_train_data[1])))
-# println("SPLITTED TRAIN 2: "* string(size(splitted_train_data[2])))
-# println("SPLITTED TRAIN 3: "* string(size(splitted_train_data[3])))
-# println("SPLITTED TRAIN 4: "* string(size(splitted_train_data[4])))
-
-#TODO DO POCIĘCIA NA MNIEJSZE BATCHE (JAK JUZ BEDZIE 60k DANYCH)
 
 
 x1_train = Constant(part_of_train_data[1:196, 1])
