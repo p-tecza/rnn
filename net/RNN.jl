@@ -56,8 +56,8 @@ println("Training started...")
     end
     blad = forward!(graph)
     println("Funkcja starty: ", blad)
-    println("[TRAIN] klasyfikacje poprawne: ", num_of_correct_clasiffications)
-    println("[TRAIN] klasyfikacje: ", num_of_clasiffications)
+    println("[TRAIN] klasyfikacje poprawne: ", num_of_correct_clasiffications,"/", num_of_clasiffications)
+    println("[TRAIN] klasyfikacje: ")
     println("train acc: ", num_of_correct_clasiffications / num_of_clasiffications)
 end
 
